@@ -20,3 +20,6 @@ __pycache__/
 
 # Lokalt virtuelt miljø
 .venv/
+
+# Packaging/build artifacts
+*.egg-info/
