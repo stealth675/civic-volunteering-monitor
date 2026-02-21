@@ -2,4 +2,21 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .env
-.xlsx
+
+# Runtime artefakter fra monitor-kjøringer
+# Rapporter
+/data/output/*.csv
+/data/output/*.xlsx
+
+# Loggfiler
+/data/output/*.log
+
+# Lokal database/state
+/data/output/*.db
+/data/output/*.db-*
+
+# Nedlastede snapshots/blobs
+/data/blob/
+
+# Lokalt virtuelt miljø
+.venv/
