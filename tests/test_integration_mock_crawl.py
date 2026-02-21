@@ -46,3 +46,22 @@ def test_crawl_keeps_document_candidates_even_when_low_relevance(monkeypatch):
     docs = [d for d in result.docs_found if d["url"].endswith("budsjett-2026.pdf")]
     assert docs
     assert docs[0]["high_relevance"] is False
+
+
+def test_crawl_accepts_www_and_non_www_same_domain(monkeypatch):
+    def fake_fetch(url, user_agent, timeout, limiter=None, retries=3):
+        if url.endswith("robots.txt"):
+            return DummyResp(text="Sitemap: https://www.example.no/sitemap.xml")
+        if url.endswith("sitemap.xml"):
+            return DummyResp(content=b"<urlset><url><loc>https://www.example.no/tjenester/frivillighet</loc></url></urlset>")
+        if "tjenester/frivillighet" in url:
+            return DummyResp(text='<a href="/docs/strategi.pdf">Strategi</a>')
+        if url.endswith("strategi.pdf"):
+            return DummyResp(headers={"Content-Type": "application/pdf"}, content=b"%PDF-1.4")
+        return DummyResp(status_code=404)
+
+    monkeypatch.setattr("monitor.crawl.dispatcher.fetch_with_retries", fake_fetch)
+    monkeypatch.setattr("monitor.crawl.sitemap.fetch_with_retries", fake_fetch)
+    result = crawl_jurisdiction("https://example.no", timeout=3, user_agent="x")
+
+    assert any(d["url"].endswith("strategi.pdf") for d in result.docs_found)

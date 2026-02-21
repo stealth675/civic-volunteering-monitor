@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 HEURISTIC_PATHS = [
+    "/",
     "/politikk",
     "/politikk-og-organisasjon",
     "/moter",
@@ -20,6 +21,16 @@ HEURISTIC_PATHS = [
     "/frivillighet",
     "/frivilligsentral",
     "/tilskudd",
+    "/tjenester",
+    "/tjenester/frivillighet",
+    "/tjenester/kultur-idrett-og-fritid",
+    "/tjenester/kultur-idrett-og-fritid/frivillighet",
+]
+
+URL_HINT_KEYWORDS = [
+    "frivillighet", "frivillig", "frivillighets",
+    "kultur", "idrett", "fritid",
+    "tilskudd", "strategi", "plan", "politikk",
 ]
 
 THEME_KEYWORDS = [
@@ -73,3 +84,8 @@ def is_crawl_relevant(text: str) -> bool:
 
 def is_llm_candidate(text: str) -> bool:
     return relevance_score(text) >= 3
+
+
+def has_url_hint(url: str) -> bool:
+    value = (url or "").lower()
+    return any(k in value for k in URL_HINT_KEYWORDS)
