@@ -15,7 +15,8 @@ dependencies = [
   "openpyxl>=3.1",
   "pypdf>=4.2",
   "python-dotenv>=1.0",
-  "openai>=1.35"
+  "openai>=1.35",
+  "cryptography>=3.1"
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,7 @@ playwright = ["playwright>=1.45"]
 
 [project.scripts]
 monitor = "monitor.cli:main"
+civic-monitor = "monitor.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -1,4 +1,4 @@
-from monitor.crawl.heuristics import is_crawl_relevant, is_llm_candidate, relevance_score
+from monitor.crawl.heuristics import has_url_hint, is_crawl_relevant, is_llm_candidate, relevance_score
 
 
 def test_relevance_score_bokmaal():
@@ -16,3 +16,7 @@ def test_negative_terms_penalized():
     text = "Møtereferat og protokoll for utvalssak"
     assert relevance_score(text) < 1
     assert not is_crawl_relevant(text)
+
+
+def test_url_hint_catches_service_paths():
+    assert has_url_hint("https://lindesnes.kommune.no/tjenester/kultur-idrett-og-fritid/frivillighet/frivillighetspolitikk/")
