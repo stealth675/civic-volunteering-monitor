@@ -12,10 +12,13 @@ cp .env.example .env
 ## Kjøring
 
 ```bash
-monitor ingest --excel data/input/Oversikt-kommuner-fylker.xlsx
-monitor run --excel data/input/Oversikt-kommuner-fylker.xlsx --output data/output --max-concurrency 4
-monitor report --run-id 1
-monitor classify --run-id 1
+civic-monitor ingest --excel data/input/Oversikt-kommuner-fylker.xlsx
+civic-monitor run --excel data/input/Oversikt-kommuner-fylker.xlsx --output data/output --max-concurrency 4
+civic-monitor report --run-id 1
+civic-monitor classify --run-id 1
+
+# fallback uten entrypoint-konflikter:
+python -m monitor ingest --excel data/input/Oversikt-kommuner-fylker.xlsx
 ```
 
 ## Hva systemet gjør
@@ -38,7 +41,7 @@ Se `src/monitor/` for moduler:
 
 ## Eksempel output
 
-Etter `monitor run` får du filer i `data/output/`:
+Etter `civic-monitor run` får du filer i `data/output/`:
 - `coverage_run_<id>.csv`
 - `coverage_run_<id>.xlsx`
 - `findings_run_<id>.csv`
