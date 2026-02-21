@@ -45,6 +45,19 @@ def _doc_ext_and_type(url: str, content_type: str) -> tuple[str, str]:
     return "html", "HTML"
 
 
+
+
+def _extract_text_for_document(ext: str, content: bytes, html_text: str, url: str) -> tuple[str, bool]:
+    if ext == "pdf":
+        try:
+            return extract_pdf_text(content)
+        except Exception as exc:
+            logger.warning("pdf parse-feil %s: %s", url, exc)
+            return "", True
+    if ext == "docx":
+        return extract_docx_text(content), False
+    return extract_main_text_from_html(html_text), False
+
 def cmd_ingest(args):
     settings = load_settings()
     conn = connect(settings.db_url)
@@ -107,14 +120,7 @@ def cmd_run(args):
                     source_id = get_or_create_source(conn, j.jurisdiction_id, url, title)
                     document_id = get_or_create_document(conn, source_id, dtype)
 
-                    text = ""
-                    needs_ocr = False
-                    if ext == "pdf":
-                        text, needs_ocr = extract_pdf_text(content)
-                    elif ext == "docx":
-                        text = extract_docx_text(content)
-                    else:
-                        text = extract_main_text_from_html(r.text)
+                    text, needs_ocr = _extract_text_for_document(ext, content, r.text, url)
 
                     blob_path = store_blob(settings.blob_dir, j.jurisdiction_id, content_hash, ext, content)
                     version_id, changed = upsert_document_version(
@@ -305,9 +311,12 @@ def build_parser():
     return p
 
 
-def main():
+def main(argv=None):
     parser = build_parser()
-    args = parser.parse_args()
+    argv = list(argv) if argv is not None else None
+    if argv and argv[0] == "monitor":
+        argv = argv[1:]
+    args = parser.parse_args(argv)
     args.func(args)
 
 
