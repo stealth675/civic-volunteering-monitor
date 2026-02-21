@@ -17,3 +17,6 @@ __pycache__/
 
 # Nedlastede snapshots/blobs
 /data/blob/
+
+# Lokalt virtuelt miljø
+.venv/
