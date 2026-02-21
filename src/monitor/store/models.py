@@ -1,0 +1,5 @@
+from __future__ import annotations
+
+COVERAGE_STATUS_OK = "OK"
+COVERAGE_STATUS_WARN = "OK_MED_ADVARSEL"
+COVERAGE_STATUS_FAIL = "FEIL"

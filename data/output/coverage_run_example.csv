@@ -1,0 +1,3 @@
+jurisdiction_id,name,website,run_id,status,http_errors_count,timeouts_count,pages_fetched,docs_found,docs_downloaded,error_message,notes
+0301,Oslo kommune,https://www.oslo.kommune.no,1,OK,0,0,12,8,6,,
+4601,Bergen kommune,https://www.bergen.kommune.no,1,OK_MED_ADVARSEL,1,0,9,4,3,,requires_js_rendering

@@ -1,0 +1,2 @@
+jurisdiction,type,title,url,doc_type,source_kind,published_date,first_seen,last_seen,category,confidence,summary,mentions_platform_ks_fn,relevance_score,llm_status,llm_reason
+Oslo kommune,kommune,Frivillighetsstrategi 2025,https://www.oslo.kommune.no/docs/frivillighet.pdf,PDF,DOCUMENT,,,,frivillighetspolitikk,0.93,"Strategi for samarbeid med frivillig sektor",false,6,classified,
