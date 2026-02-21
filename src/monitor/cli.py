@@ -305,9 +305,12 @@ def build_parser():
     return p
 
 
-def main():
+def main(argv=None):
     parser = build_parser()
-    args = parser.parse_args()
+    argv = list(argv) if argv is not None else None
+    if argv and argv[0] == "monitor":
+        argv = argv[1:]
+    args = parser.parse_args(argv)
     args.func(args)
 
 
