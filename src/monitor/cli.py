@@ -140,8 +140,16 @@ def cmd_run(args):
                     llm_json = {}
                     llm_status = "not_changed"
                     llm_reason = "Dokumentet er ikke endret siden forrige versjon"
-                    rel_signal = f"{title} {url} {text[:4000]}"
-                    rel_score = relevance_score(rel_signal)
+                    rel_signal = text[:4000]
+                    source_kind = item.get("doc_type_hint", "DOCUMENT")
+                    rel_score = relevance_score(
+                        rel_signal,
+                        url=url,
+                        title=title,
+                        section=url,
+                        mime_type=r.headers.get("Content-Type", ""),
+                        doc_type_hint=source_kind,
+                    )
 
                     if changed:
                         if not text.strip():
@@ -150,7 +158,14 @@ def cmd_run(args):
                         elif not (settings.openai_api_key or settings.azure_openai_api_key):
                             llm_status = "skipped_no_api_key"
                             llm_reason = "Mangler API-nøkkel"
-                        elif not is_llm_candidate(rel_signal):
+                        elif not is_llm_candidate(
+                            rel_signal,
+                            url=url,
+                            title=title,
+                            section=url,
+                            mime_type=r.headers.get("Content-Type", ""),
+                            doc_type_hint=source_kind,
+                        ):
                             llm_status = "skipped_low_relevance"
                             llm_reason = "Lav relevansscore"
                         else:
@@ -173,7 +188,7 @@ def cmd_run(args):
                                 "title": title,
                                 "url": url,
                                 "doc_type": dtype,
-                                "source_kind": item.get("doc_type_hint", "DOCUMENT"),
+                                "source_kind": source_kind,
                                 "published_date": "",
                                 "first_seen": "",
                                 "last_seen": "",

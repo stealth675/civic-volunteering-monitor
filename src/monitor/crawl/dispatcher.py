@@ -6,7 +6,17 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from monitor.crawl.fetch import DomainRateLimiter, fetch_with_retries
-from monitor.crawl.heuristics import HEURISTIC_PATHS, has_url_hint, is_crawl_relevant, is_document_url
+from monitor.crawl.heuristics import (
+    HEURISTIC_PATHS,
+    MAX_CANDIDATES_PER_DOMAIN,
+    has_url_hint,
+    is_crawl_relevant,
+    is_document_url,
+    is_hard_denied,
+    is_political_section_url,
+    relevance_score,
+    should_keep_document,
+)
 from monitor.crawl.html_extract import extract_links, html_looks_js_driven
 from monitor.crawl.playwright_fetch import fetch_rendered_html
 from monitor.crawl.sitemap import discover_sitemaps, parse_sitemap_urls
@@ -52,7 +62,11 @@ def crawl_jurisdiction(base_url: str, timeout: int, user_agent: str, playwright_
             sres = fetch_with_retries(sitemap_url, user_agent, timeout, limiter=limiter)
             if sres.status_code == 200:
                 for u in parse_sitemap_urls(sres.content):
-                    if _same_domain(u, domain) and (is_crawl_relevant(u) or has_url_hint(u)):
+                    if not _same_domain(u, domain):
+                        continue
+                    if is_hard_denied(u):
+                        continue
+                    if is_crawl_relevant(url=u) or has_url_hint(u):
                         q.append((u, 0))
         except Exception:
             continue
@@ -80,8 +94,8 @@ def crawl_jurisdiction(base_url: str, timeout: int, user_agent: str, playwright_
 
         ctype = res.headers.get("Content-Type", "").lower()
         if any(x in ctype for x in ["application/pdf", "application/msword", "application/vnd.openxmlformats"]):
-            if url not in candidate_urls:
-                docs_found.append({"url": url, "title": "", "high_relevance": is_crawl_relevant(url), "doc_type_hint": "DOCUMENT"})
+            if url not in candidate_urls and should_keep_document(url=url, title="", parent_url="", score=relevance_score(url=url, mime_type=ctype, doc_type_hint="DOCUMENT")):
+                docs_found.append({"url": url, "title": "", "high_relevance": is_crawl_relevant(url=url, mime_type=ctype, doc_type_hint="DOCUMENT"), "doc_type_hint": "DOCUMENT"})
                 candidate_urls.add(url)
             continue
 
@@ -97,27 +111,40 @@ def crawl_jurisdiction(base_url: str, timeout: int, user_agent: str, playwright_
                 notes.append("js_rendering_failed")
 
         page_text = extract_main_text_from_html(html)
-        page_signal = f"{url} {page_text[:4000]}"
-        if is_crawl_relevant(page_signal) and url not in candidate_urls:
-            docs_found.append({"url": url, "title": "", "high_relevance": True, "doc_type_hint": "HTML_PAGE"})
+        page_signal = page_text[:4000]
+        page_score = relevance_score(text=page_signal, url=url, mime_type=ctype, doc_type_hint="HTML_PAGE")
+        if page_score >= 0 and is_crawl_relevant(text=page_signal, url=url, mime_type=ctype, doc_type_hint="HTML_PAGE") and url not in candidate_urls:
+            docs_found.append({"url": url, "title": "", "high_relevance": True, "doc_type_hint": "HTML_PAGE", "relevance_score": page_score})
             candidate_urls.add(url)
 
         for link, title in links:
             if not _same_domain(link, domain):
                 continue
-            signal = f"{link} {title}"
+            if is_hard_denied(link, title):
+                continue
+            link_score = relevance_score(text=title, url=link, section=url, doc_type_hint="DOCUMENT" if is_document_url(link) else "HTML_PAGE")
             if is_document_url(link):
-                if link not in candidate_urls:
+                if link not in candidate_urls and should_keep_document(url=link, title=title, parent_url=url, score=link_score):
                     docs_found.append(
                         {
                             "url": link,
                             "title": title,
-                            "high_relevance": is_crawl_relevant(signal),
+                            "high_relevance": link_score >= 6,
                             "doc_type_hint": "DOCUMENT",
+                            "relevance_score": link_score,
                         }
                     )
                     candidate_urls.add(link)
-            elif depth < 3 and (is_crawl_relevant(signal) or has_url_hint(link)):
+            elif depth < 3 and (is_crawl_relevant(text=title, url=link, section=url, doc_type_hint="HTML_PAGE") or has_url_hint(link)):
                 q.append((link, depth + 1))
+
+    docs_found.sort(key=lambda item: (
+        1 if is_political_section_url(item.get("url", "")) else 0,
+        item.get("relevance_score", 0),
+        1 if item.get("doc_type_hint") == "HTML_PAGE" else 0,
+    ), reverse=True)
+    if len(docs_found) > MAX_CANDIDATES_PER_DOMAIN:
+        notes.append(f"candidate_cap_applied:{MAX_CANDIDATES_PER_DOMAIN}")
+    docs_found = docs_found[:MAX_CANDIDATES_PER_DOMAIN]
 
     return CrawlResult(pages_fetched, docs_found, http_errors, timeouts, notes)
