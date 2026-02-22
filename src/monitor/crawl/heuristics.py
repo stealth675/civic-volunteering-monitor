@@ -27,7 +27,7 @@ DISCOVERY_PATHS = {
         "/planar-og-strategiar",
         "/strategi",
         "/strategiar",
-        "/planstrategi",
+"/planstrategi",
         "/horing",
         "/hoyring",
         "/dokumenter",

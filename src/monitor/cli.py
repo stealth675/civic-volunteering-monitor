@@ -173,6 +173,7 @@ def cmd_run(args):
                         elif not (settings.openai_api_key or settings.azure_openai_api_key):
                             llm_status = "skipped_no_api_key"
                             llm_reason = "Mangler API-nøkkel"
+<<<<<<< codex/redesign-search-heuristics-for-civic-volunteering-hbf18n
                         elif is_review_candidate(
                             rel_signal,
                             url=url,
@@ -183,6 +184,8 @@ def cmd_run(args):
                         ):
                             llm_status = "review_bucket"
                             llm_reason = "Middels relevansscore (3-5), beholdt for manuell vurdering"
+=======
+>>>>>>> main
                         elif not is_llm_candidate(
                             rel_signal,
                             url=url,
