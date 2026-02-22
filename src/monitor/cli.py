@@ -10,7 +10,7 @@ from monitor.classify.classify_doc import classify_document
 from monitor.config import load_settings
 from monitor.crawl.dispatcher import crawl_jurisdiction
 from monitor.crawl.fetch import DomainRateLimiter, fetch_with_retries
-from monitor.crawl.heuristics import is_llm_candidate, relevance_score
+from monitor.crawl.heuristics import is_llm_candidate, is_review_candidate, relevance_score
 from monitor.ingest.excel_loader import load_jurisdictions
 from monitor.logging_setup import setup_logging
 from monitor.parse.content_clean import extract_main_text_from_html
@@ -96,6 +96,23 @@ def cmd_run(args):
             "docs_downloaded": 0,
             "error_message": inv["error"],
             "notes": "invalid_input",
+            "base_fetch_status": "",
+            "base_fetch_error": "",
+            "base_final_url": "",
+            "robots_status": "",
+            "sitemap_status": "",
+            "sitemap_urls_found": 0,
+            "sitemap_sitemaps_found": 0,
+            "enqueued_urls_total": 0,
+            "dropped_before_fetch_count": 0,
+            "drop_reasons_top3": "",
+            "hard_deny_dropped_count": 0,
+            "first_http_error_code": "",
+            "http_403_count": 0,
+            "http_429_count": 0,
+            "http_5xx_count": 0,
+            "time_budget_seconds": 0,
+            "time_spent_seconds": 0,
         }
         coverage_rows.append(row)
         insert_status(conn, row)
@@ -104,7 +121,14 @@ def cmd_run(args):
         upsert_jurisdiction(conn, j)
         docs_downloaded = 0
         try:
-            result = crawl_jurisdiction(j.website, settings.request_timeout, settings.user_agent, settings.playwright_enabled)
+            result = crawl_jurisdiction(
+                j.website,
+                settings.request_timeout,
+                settings.user_agent,
+                settings.playwright_enabled,
+                run_id=run_id,
+                domain_time_budget_seconds=settings.domain_time_budget_seconds,
+            )
             limiter = DomainRateLimiter(max_per_second=2.0)
 
             for item in result.docs_found:
@@ -137,11 +161,23 @@ def cmd_run(args):
                     )
                     docs_downloaded += 1
 
-                    llm_json = {}
+                    version_row = conn.execute(
+                        "SELECT first_seen, last_seen, last_modified, llm_json FROM document_versions WHERE id=?",
+                        (version_id,),
+                    ).fetchone()
+                    llm_json = json.loads(version_row["llm_json"]) if version_row and version_row["llm_json"] else {}
                     llm_status = "not_changed"
                     llm_reason = "Dokumentet er ikke endret siden forrige versjon"
-                    rel_signal = f"{title} {url} {text[:4000]}"
-                    rel_score = relevance_score(rel_signal)
+                    rel_signal = text[:4000]
+                    source_kind = item.get("doc_type_hint", "DOCUMENT")
+                    rel_score = relevance_score(
+                        rel_signal,
+                        url=url,
+                        title=title,
+                        section=url,
+                        mime_type=r.headers.get("Content-Type", ""),
+                        doc_type_hint=source_kind,
+                    )
 
                     if changed:
                         if not text.strip():
@@ -150,7 +186,24 @@ def cmd_run(args):
                         elif not (settings.openai_api_key or settings.azure_openai_api_key):
                             llm_status = "skipped_no_api_key"
                             llm_reason = "Mangler API-nøkkel"
-                        elif not is_llm_candidate(rel_signal):
+                        elif is_review_candidate(
+                            rel_signal,
+                            url=url,
+                            title=title,
+                            section=url,
+                            mime_type=r.headers.get("Content-Type", ""),
+                            doc_type_hint=source_kind,
+                        ):
+                            llm_status = "review_bucket"
+                            llm_reason = "Middels relevansscore (3-5), beholdt for manuell vurdering"
+                        elif not is_llm_candidate(
+                            rel_signal,
+                            url=url,
+                            title=title,
+                            section=url,
+                            mime_type=r.headers.get("Content-Type", ""),
+                            doc_type_hint=source_kind,
+                        ):
                             llm_status = "skipped_low_relevance"
                             llm_reason = "Lav relevansscore"
                         else:
@@ -166,26 +219,34 @@ def cmd_run(args):
                                 llm_status = "llm_error"
                                 llm_reason = str(llm_exc)
 
-                        findings_rows.append(
-                            {
-                                "jurisdiction": j.name,
-                                "type": j.type,
-                                "title": title,
-                                "url": url,
-                                "doc_type": dtype,
-                                "source_kind": item.get("doc_type_hint", "DOCUMENT"),
-                                "published_date": "",
-                                "first_seen": "",
-                                "last_seen": "",
-                                "category": llm_json.get("category", ""),
-                                "confidence": llm_json.get("confidence", ""),
-                                "summary": llm_json.get("summary", ""),
-                                "mentions_platform_ks_fn": llm_json.get("mentions_platform_ks_fn", False),
-                                "relevance_score": rel_score,
-                                "llm_status": llm_status,
-                                "llm_reason": llm_reason,
-                            }
-                        )
+                    findings_rows.append(
+                        {
+                            "jurisdiction": j.name,
+                            "type": j.type,
+                            "title": title,
+                            "url": url,
+                            "doc_type": dtype,
+                            "source_kind": source_kind,
+                            "published_date": (version_row["last_modified"] if version_row else "") or r.headers.get("Last-Modified", ""),
+                            "first_seen": version_row["first_seen"] if version_row else "",
+                            "last_seen": version_row["last_seen"] if version_row else "",
+                            "category": llm_json.get("category", ""),
+                            "confidence": llm_json.get("confidence", ""),
+                            "summary": llm_json.get("summary", ""),
+                            "mentions_platform_ks_fn": llm_json.get("mentions_platform_ks_fn", False),
+                            "effective_date": item.get("effective_date", ""),
+                            "recency_bucket": item.get("recency_bucket", 3),
+                            "date_source": item.get("date_source", "none"),
+                            "theme_match": item.get("theme_match", False),
+                            "theme_hits": ",".join(item.get("theme_hits", [])) if isinstance(item.get("theme_hits"), list) else item.get("theme_hits", ""),
+                            "political_match": item.get("political_match", False),
+                            "political_hits": ",".join(item.get("political_hits", [])) if isinstance(item.get("political_hits"), list) else item.get("political_hits", ""),
+                            "relevance_score": rel_score,
+                            "llm_status": llm_status,
+                            "llm_reason": llm_reason,
+                        }
+                    )
+
                 except Exception as exc:
                     logger.warning("dokumentfeil %s: %s", url, exc)
 
@@ -203,6 +264,23 @@ def cmd_run(args):
                 "docs_downloaded": docs_downloaded,
                 "error_message": "",
                 "notes": ";".join(sorted(set(result.notes))),
+                "base_fetch_status": result.diagnostics.base_fetch_status or "",
+                "base_fetch_error": result.diagnostics.base_fetch_error,
+                "base_final_url": result.diagnostics.base_final_url,
+                "robots_status": result.diagnostics.robots_status or "",
+                "sitemap_status": result.diagnostics.sitemap_status or "",
+                "sitemap_urls_found": result.diagnostics.sitemap_urls_found,
+                "sitemap_sitemaps_found": result.diagnostics.sitemap_sitemaps_found,
+                "enqueued_urls_total": result.diagnostics.enqueued_urls_total,
+                "dropped_before_fetch_count": result.diagnostics.dropped_before_fetch_count,
+                "drop_reasons_top3": result.diagnostics.drop_reasons_top3,
+                "hard_deny_dropped_count": result.diagnostics.hard_deny_dropped_count,
+                "first_http_error_code": result.diagnostics.first_http_error_code or "",
+                "http_403_count": result.diagnostics.http_403_count,
+                "http_429_count": result.diagnostics.http_429_count,
+                "http_5xx_count": result.diagnostics.http_5xx_count,
+                "time_budget_seconds": result.diagnostics.time_budget_seconds,
+                "time_spent_seconds": result.diagnostics.time_spent_seconds,
             }
             coverage_rows.append(row)
             insert_status(conn, row)
@@ -220,9 +298,33 @@ def cmd_run(args):
                 "docs_downloaded": 0,
                 "error_message": str(exc),
                 "notes": "crawl_failed",
+                "base_fetch_status": "",
+                "base_fetch_error": "",
+                "base_final_url": "",
+                "robots_status": "",
+                "sitemap_status": "",
+                "sitemap_urls_found": 0,
+                "sitemap_sitemaps_found": 0,
+                "enqueued_urls_total": 0,
+                "dropped_before_fetch_count": 0,
+                "drop_reasons_top3": "",
+                "hard_deny_dropped_count": 0,
+                "first_http_error_code": "",
+                "http_403_count": 0,
+                "http_429_count": 0,
+                "http_5xx_count": 0,
+            "time_budget_seconds": 0,
+            "time_spent_seconds": 0,
             }
             coverage_rows.append(row)
             insert_status(conn, row)
+
+    status_agg = {"http_403_count": 0, "http_429_count": 0, "http_5xx_count": 0}
+    for r in coverage_rows:
+        status_agg["http_403_count"] += int(r.get("http_403_count", 0) or 0)
+        status_agg["http_429_count"] += int(r.get("http_429_count", 0) or 0)
+        status_agg["http_5xx_count"] += int(r.get("http_5xx_count", 0) or 0)
+    logger.info("RUN_STATUS_SUMMARY run_id=%s http_403=%s http_429=%s http_5xx=%s", run_id, status_agg["http_403_count"], status_agg["http_429_count"], status_agg["http_5xx_count"])
 
     finish_run(conn, run_id)
     cov = write_coverage_report(coverage_rows, output_dir, run_id)
@@ -237,8 +339,15 @@ def cmd_report(args):
     c = write_coverage_report(rows, args.output, args.run_id)
     f_rows = []
     query = """
-    SELECT s.jurisdiction_id, j.name as jurisdiction, j.type, s.url, s.title, d.doc_type, dv.llm_json
-    FROM document_versions dv
+    WITH latest AS (
+        SELECT document_id, MAX(id) AS version_id
+        FROM document_versions
+        GROUP BY document_id
+    )
+    SELECT s.jurisdiction_id, j.name as jurisdiction, j.type, s.url, s.title, d.doc_type, dv.llm_json,
+           dv.first_seen, dv.last_seen, dv.last_modified
+    FROM latest l
+    JOIN document_versions dv ON dv.id=l.version_id
     JOIN documents d ON dv.document_id=d.id
     JOIN sources s ON d.source_id=s.id
     LEFT JOIN jurisdictions j ON j.jurisdiction_id=s.jurisdiction_id
@@ -253,13 +362,20 @@ def cmd_report(args):
                 "url": r["url"],
                 "doc_type": r["doc_type"],
                 "source_kind": r["doc_type"],
-                "published_date": "",
-                "first_seen": "",
-                "last_seen": "",
+                "published_date": r["last_modified"] or "",
+                "first_seen": r["first_seen"] or "",
+                "last_seen": r["last_seen"] or "",
                 "category": llm.get("category", ""),
                 "confidence": llm.get("confidence", ""),
                 "summary": llm.get("summary", ""),
                 "mentions_platform_ks_fn": llm.get("mentions_platform_ks_fn", False),
+                "effective_date": r["last_modified"] or "",
+                "recency_bucket": 3,
+                "date_source": "header_last_modified" if r["last_modified"] else "none",
+                "theme_match": "",
+                "theme_hits": "",
+                "political_match": "",
+                "political_hits": "",
                 "relevance_score": "",
                 "llm_status": "classified" if llm else "not_classified",
                 "llm_reason": "",

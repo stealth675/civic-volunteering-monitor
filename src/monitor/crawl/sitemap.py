@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from xml.etree import ElementTree as ET
 
-from monitor.crawl.fetch import fetch_with_retries, DomainRateLimiter
+from monitor.crawl.fetch import DomainRateLimiter, fetch_with_retries
 
 SITEMAP_TAG_RE = re.compile(r"^Sitemap:\s*(\S+)", re.IGNORECASE)
 
@@ -25,15 +25,27 @@ def discover_sitemaps(base_url: str, user_agent: str, timeout: int, limiter: Dom
     return sitemaps
 
 
-def parse_sitemap_urls(xml_content: bytes) -> list[str]:
+def parse_sitemap_entries(xml_content: bytes) -> list[dict]:
     root = ET.fromstring(xml_content)
     ns = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
-    urls: list[str] = []
-    for node in root.findall(f".//{ns}loc"):
-        if node.text:
-            urls.append(node.text.strip())
-    if not urls:
-        for node in root.findall(".//loc"):
-            if node.text:
-                urls.append(node.text.strip())
-    return urls
+    entries: list[dict] = []
+    for url_node in root.findall(f".//{ns}url") + root.findall(".//url"):
+        loc_node = url_node.find(f"{ns}loc")
+        if loc_node is None:
+            loc_node = url_node.find("loc")
+        if loc_node is None or not loc_node.text:
+            continue
+        lastmod_node = url_node.find(f"{ns}lastmod")
+        if lastmod_node is None:
+            lastmod_node = url_node.find("lastmod")
+        entries.append({"url": loc_node.text.strip(), "lastmod": lastmod_node.text.strip() if lastmod_node is not None and lastmod_node.text else ""})
+    if entries:
+        return entries
+    for loc in root.findall(f".//{ns}loc") + root.findall(".//loc"):
+        if loc.text:
+            entries.append({"url": loc.text.strip(), "lastmod": ""})
+    return entries
+
+
+def parse_sitemap_urls(xml_content: bytes) -> list[str]:
+    return [e["url"] for e in parse_sitemap_entries(xml_content)]
