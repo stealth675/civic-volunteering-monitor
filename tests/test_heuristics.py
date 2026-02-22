@@ -93,3 +93,11 @@ def test_arrangementstilskudd_scores_low():
 def test_url_hints_and_political_section_matchers():
     assert has_url_hint("https://kommune.no/politikk/moter-og-saker/sakspapirer")
     assert is_political_section_url("https://kommune.no/innsyn/utvalg")
+
+
+def test_nynorsk_url_hints_supported():
+    assert has_url_hint("https://kommune.no/hoyring/planar-og-strategiar/frivillegheit")
+
+
+def test_nynorsk_political_section_matchers():
+    assert is_political_section_url("https://kommune.no/mote-og-saker/utval")

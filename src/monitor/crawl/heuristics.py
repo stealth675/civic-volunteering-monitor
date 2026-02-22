@@ -7,30 +7,43 @@ DISCOVERY_PATHS = {
         "/politikk",
         "/politikk-og-organisasjon",
         "/moter",
+        "/mote",
         "/moter-og-saker",
+        "/mote-og-saker",
         "/saker",
+        "/sak",
         "/innsyn",
         "/postliste",
         "/rad-og-utvalg",
+        "/rad-og-utval",
         "/utvalg",
         "/kommunestyret",
         "/formannskap",
     ],
     "planning_strategy": [
         "/planer",
+        "/planar",
         "/planer-og-strategier",
+        "/planar-og-strategiar",
         "/strategi",
+        "/strategiar",
         "/planstrategi",
         "/horing",
+        "/hoyring",
         "/dokumenter",
+        "/dokument",
         "/dokumentarkiv",
     ],
     "volunteering": [
         "/frivillighet",
+        "/frivillegheit",
         "/frivillig",
+        "/friviljug",
         "/frivilligsentral",
+        "/frivilligsentralen",
         "/fritid",
         "/kultur-idrett-og-fritid",
+        "/kultur-idrett-og-fritidstilbod",
         "/tjenester/frivillighet",
         "/tjenester/kultur-idrett-og-fritid/frivillighet",
     ],
@@ -40,8 +53,10 @@ HEURISTIC_PATHS = ["/"] + [p for paths in DISCOVERY_PATHS.values() for p in path
 
 URL_HINT_KEYWORDS = [
     "frivillighet", "frivillig", "frivillighets", "fritidserklaering", "fritidserkl",
-    "kultur", "idrett", "fritid", "moter", "saker", "innsyn",
-    "tilskudd", "strategi", "plan", "politikk", "sakspapir", "protokoll",
+    "kultur", "idrett", "fritid", "moter", "mote", "saker", "sak", "innsyn",
+    "tilskudd", "tilskot", "strategi", "strategiar", "plan", "planar", "politikk",
+    "sakspapir", "saksframlegg", "protokoll", "motebok", "møtebok",
+    "frivilleg", "friviljug", "hoyring", "høyring",
 ]
 
 THEME_KEYWORDS = [
@@ -97,7 +112,7 @@ HARD_DENYLIST_REGEX = [
 ]
 
 POLITICAL_SECTION_REGEX = re.compile(
-    r"/(?:moter(?:-og-saker)?|saker|innsyn|postliste|rad-og-utvalg|utvalg|kommunestyret|formannskap|politikk)",
+    r"/(?:moter(?:-og-saker)?|mote(?:-og-saker)?|saker|sak|innsyn|postliste|rad-og-utvalg|rad-og-utval|utvalg|utval|kommunestyret|formannskap|politikk)",
     re.IGNORECASE,
 )
 
