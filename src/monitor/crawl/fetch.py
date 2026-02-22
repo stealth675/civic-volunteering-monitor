@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import time
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -33,8 +34,18 @@ class DomainRateLimiter:
         self._last_call[domain] = time.time()
 
 
+def _request_headers(user_agent: str) -> dict[str, str]:
+    return {
+        "User-Agent": user_agent or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "nb-NO,nb;q=0.9,en;q=0.8",
+        "Connection": "keep-alive",
+        "Cache-Control": "no-cache",
+    }
+
+
 def _do_get(url: str, user_agent: str, timeout: int) -> SimpleResponse:
-    req = Request(url, headers={"User-Agent": user_agent})
+    req = Request(url, headers=_request_headers(user_agent))
     with urlopen(req, timeout=timeout) as res:
         content = res.read()
         headers = {k: v for k, v in res.headers.items()}
@@ -46,7 +57,12 @@ def _do_get(url: str, user_agent: str, timeout: int) -> SimpleResponse:
         return SimpleResponse(status_code=getattr(res, "status", 200), text=text, content=content, headers=headers)
 
 
-def fetch_with_retries(url: str, user_agent: str, timeout: int, limiter: DomainRateLimiter | None = None, retries: int = 3):
+def _sleep_backoff(attempt: int) -> None:
+    base = min(8.0, 0.8 * (2 ** (attempt - 1)))
+    time.sleep(base + random.uniform(0.0, 0.25))
+
+
+def fetch_with_retries(url: str, user_agent: str, timeout: int, limiter: DomainRateLimiter | None = None, retries: int = 4):
     domain = urlparse(url).netloc
     limiter = limiter or DomainRateLimiter(max_per_second=2.0)
 
@@ -56,12 +72,12 @@ def fetch_with_retries(url: str, user_agent: str, timeout: int, limiter: DomainR
             return _do_get(url, user_agent, timeout)
         except HTTPError as exc:
             if exc.code in {429, 500, 502, 503, 504} and attempt < retries:
-                time.sleep(1.5 * attempt)
+                _sleep_backoff(attempt)
                 continue
             return SimpleResponse(status_code=exc.code, text="", content=b"", headers={})
         except URLError as exc:
             if attempt == retries:
                 raise TimeoutError(str(exc))
             logger.warning("retrying %s due to %s", url, exc)
-            time.sleep(1.5 * attempt)
+            _sleep_backoff(attempt)
     raise RuntimeError("Unexpected retry flow")
