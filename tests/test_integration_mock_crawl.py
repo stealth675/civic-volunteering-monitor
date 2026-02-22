@@ -93,3 +93,21 @@ def test_time_budget_stops_domain(monkeypatch):
     monkeypatch.setattr("monitor.crawl.sitemap.fetch_with_retries", fake_fetch)
     result = crawl_jurisdiction("https://example.no", timeout=3, user_agent="x", domain_time_budget_seconds=1)
     assert "time_budget_reached" in result.notes
+
+
+def test_no_hard_120_cap_on_political_docs(monkeypatch):
+    def fake_fetch(url, user_agent, timeout, limiter=None, retries=3):
+        if url.endswith("robots.txt"):
+            return DummyResp(text="Sitemap: https://example.no/sitemap.xml")
+        if url.endswith("sitemap.xml"):
+            body = "".join([f"<url><loc>https://example.no/moter-og-saker/doc-{i}.pdf</loc></url>" for i in range(130)])
+            return DummyResp(content=(f"<urlset>{body}</urlset>").encode())
+        if "/moter-og-saker/doc-" in url and url.endswith('.pdf'):
+            return DummyResp(headers={"Content-Type": "application/pdf"}, content=b"%PDF")
+        return DummyResp(status_code=404)
+
+    monkeypatch.setattr("monitor.crawl.dispatcher.fetch_with_retries", fake_fetch)
+    monkeypatch.setattr("monitor.crawl.sitemap.fetch_with_retries", fake_fetch)
+    result = crawl_jurisdiction("https://example.no", timeout=3, user_agent="x", domain_time_budget_seconds=120)
+    docs = [d for d in result.docs_found if d["url"].endswith('.pdf')]
+    assert len(docs) >= 121

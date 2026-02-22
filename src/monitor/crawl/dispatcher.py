@@ -28,9 +28,9 @@ from monitor.parse.content_clean import extract_main_text_from_html
 
 logger = logging.getLogger(__name__)
 MIN_FETCH_ATTEMPTS_PER_JURISDICTION = 5
-MAX_DOCS_FROM_POLITICAL_SECTIONS = 120
-MAX_DOCS_FROM_PLANS = 60
-MAX_DOCS_FROM_MISC = 60
+MAX_DOCS_FROM_POLITICAL_SECTIONS = None
+MAX_DOCS_FROM_PLANS = None
+MAX_DOCS_FROM_MISC = None
 DATE_PATTERNS = [
     re.compile(r"(20\d{2})[-/](\d{2})[-/](\d{2})"),
     re.compile(r"(20\d{2})/(\d{2})/(\d{2})"),
@@ -400,11 +400,11 @@ def crawl_jurisdiction(
             bucket = "plans"
         else:
             bucket = "misc"
-        if bucket == "political" and counts[bucket] >= MAX_DOCS_FROM_POLITICAL_SECTIONS:
+        if bucket == "political" and MAX_DOCS_FROM_POLITICAL_SECTIONS is not None and counts[bucket] >= MAX_DOCS_FROM_POLITICAL_SECTIONS:
             continue
-        if bucket == "plans" and counts[bucket] >= MAX_DOCS_FROM_PLANS:
+        if bucket == "plans" and MAX_DOCS_FROM_PLANS is not None and counts[bucket] >= MAX_DOCS_FROM_PLANS:
             continue
-        if bucket == "misc" and counts[bucket] >= MAX_DOCS_FROM_MISC:
+        if bucket == "misc" and MAX_DOCS_FROM_MISC is not None and counts[bucket] >= MAX_DOCS_FROM_MISC:
             continue
         selected.append(item)
         counts[bucket] += 1
