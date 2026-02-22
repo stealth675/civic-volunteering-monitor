@@ -19,6 +19,7 @@ DISCOVERY_PATHS = {
         "/utvalg",
         "/kommunestyret",
         "/formannskap",
+        "/saksdokument",
     ],
     "planning_strategy": [
         "/planer",
@@ -49,7 +50,7 @@ DISCOVERY_PATHS = {
     ],
 }
 
-HEURISTIC_PATHS = ["/"] + [p for paths in DISCOVERY_PATHS.values() for p in paths]
+HEURISTIC_PATHS = sorted(set(["/"] + [p for paths in DISCOVERY_PATHS.values() for p in paths]))
 
 URL_HINT_KEYWORDS = [
     "frivillighet", "frivillig", "frivillighets", "fritidserklaering", "fritidserkl",
@@ -83,8 +84,7 @@ GOVERNANCE_KEYWORDS = [
 POLITICAL_DOC_TYPE_KEYWORDS = [
     "sakspapirer", "sakspapir", "saksframlegg", "saksfremlegg", "saksutredning", "saksutgreiing",
     "innstilling", "vedtak", "protokoll", "møteinnkalling", "møtereferat", "motebok", "møtebok",
-    "sakslisten", "saksliste", "handlingsplan", "temaplan", "strategi", "planstrategi",
-    "rapport", "analyse", "evaluering", "utredning", "utgreiing",
+    "sakslisten", "saksliste", "referat", "møteprotokoll",
 ]
 
 COLLABORATION_KEYWORDS = [
@@ -112,13 +112,12 @@ HARD_DENYLIST_REGEX = [
 ]
 
 POLITICAL_SECTION_REGEX = re.compile(
-    r"/(?:moter(?:-og-saker)?|mote(?:-og-saker)?|saker|sak|innsyn|postliste|rad-og-utvalg|rad-og-utval|utvalg|utval|kommunestyret|formannskap|politikk)",
+    r"/(?:moter(?:-og-saker)?|mote(?:-og-saker)?|saker|sak|innsyn|postliste|rad-og-utvalg|rad-og-utval|utvalg|utval|kommunestyret|formannskap|politikk|saksdokument)",
     re.IGNORECASE,
 )
 
 LLM_RELEVANCE_THRESHOLD = 6
-CRAWL_RELEVANCE_THRESHOLD = 3
-MAX_CANDIDATES_PER_DOMAIN = 120
+CRAWL_RELEVANCE_THRESHOLD = 2
 
 
 def is_document_url(url: str) -> bool:
@@ -127,17 +126,24 @@ def is_document_url(url: str) -> bool:
 
 
 def is_hard_denied(url: str, title: str = "") -> bool:
-    value = f"{url or ''} {title or ''}".lower()
-    if any(term in value for term in HARD_DENYLIST_CONTAINS):
+    parsed = (url or "").lower().split("?", 1)[0]
+    if any(term in parsed for term in HARD_DENYLIST_CONTAINS):
         return True
-    return any(pattern.search(value) for pattern in HARD_DENYLIST_REGEX)
+    if any(pattern.search(parsed) for pattern in HARD_DENYLIST_REGEX):
+        return True
+    filename = parsed.rsplit("/", 1)[-1]
+    return any(term in filename for term in ["plankart", "reguleringsplan", "byggesak", "matrikkel", "nabovarsel"])
 
 
 def is_political_section_url(url: str) -> bool:
     return bool(POLITICAL_SECTION_REGEX.search((url or "").lower()))
 
 
-def relevance_score(
+def _hits(value: str, keywords: list[str]) -> list[str]:
+    return [k for k in keywords if k in value]
+
+
+def relevance_details(
     text: str = "",
     *,
     url: str = "",
@@ -145,28 +151,57 @@ def relevance_score(
     section: str = "",
     mime_type: str = "",
     doc_type_hint: str = "",
-) -> int:
+) -> dict:
     value = " ".join([text or "", url or "", title or "", section or "", mime_type or "", doc_type_hint or ""]).lower()
+    theme_hits = _hits(value, THEME_KEYWORDS)
+    governance_hits = _hits(value, GOVERNANCE_KEYWORDS)
+    political_hits = _hits(value, POLITICAL_DOC_TYPE_KEYWORDS)
+    collab_hits = _hits(value, COLLABORATION_KEYWORDS)
+    negative_hits = _hits(value, NEGATIVE_KEYWORDS)
+
+    theme_match = bool(theme_hits)
+    political_match = bool(political_hits)
+    in_political_section = is_political_section_url(url) or is_political_section_url(section)
+
     score = 0
-    if any(k in value for k in THEME_KEYWORDS):
-        score += 3
-    if any(k in value for k in GOVERNANCE_KEYWORDS):
+    if theme_match:
+        score += 5
+    if governance_hits:
         score += 2
-    if any(k in value for k in POLITICAL_DOC_TYPE_KEYWORDS):
-        score += 3
-    if any(k in value for k in COLLABORATION_KEYWORDS):
+    if collab_hits:
         score += 2
-    if is_political_section_url(url) or is_political_section_url(section):
-        score += 3
+
+    # political boosts are conditional on theme
+    if in_political_section:
+        score += 1
+        if theme_match:
+            score += 1
+    if political_match and theme_match:
+        score += 2
+    elif political_match:
+        score += 0
+
     if is_document_url(url) and mime_type.lower().startswith("application/"):
         score += 1
-    if any(k in value for k in NEGATIVE_KEYWORDS):
+    if negative_hits:
         score -= 4
     if "arrangement" in value and "tilskudd" in value:
         score -= 3
     if is_hard_denied(url, title):
         score -= 8
-    return score
+
+    return {
+        "score": score,
+        "theme_match": theme_match,
+        "theme_hits": theme_hits,
+        "political_match": political_match,
+        "political_hits": political_hits,
+        "in_political_section": in_political_section,
+    }
+
+
+def relevance_score(text: str = "", **kwargs) -> int:
+    return relevance_details(text, **kwargs)["score"]
 
 
 def is_crawl_relevant(text: str = "", **kwargs) -> bool:
@@ -174,7 +209,13 @@ def is_crawl_relevant(text: str = "", **kwargs) -> bool:
 
 
 def is_llm_candidate(text: str = "", **kwargs) -> bool:
-    return relevance_score(text, **kwargs) >= LLM_RELEVANCE_THRESHOLD
+    details = relevance_details(text, **kwargs)
+    return details["theme_match"] and details["score"] >= LLM_RELEVANCE_THRESHOLD
+
+
+def is_review_candidate(text: str = "", **kwargs) -> bool:
+    score = relevance_score(text, **kwargs)
+    return 3 <= score <= 5
 
 
 def should_keep_document(url: str, title: str = "", parent_url: str = "", score: int | None = None) -> bool:

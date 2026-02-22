@@ -22,6 +22,7 @@ class Settings:
     azure_openai_api_version: str = "2024-05-01-preview"
     azure_openai_deployment: str = ""
     llm_max_chars: int = 24000
+    domain_time_budget_seconds: int = 45
 
 
 def _as_bool(value: str | None, default: bool = False) -> bool:
@@ -48,4 +49,5 @@ def load_settings() -> Settings:
         azure_openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION", Settings.azure_openai_api_version),
         azure_openai_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT", ""),
         llm_max_chars=int(os.getenv("LLM_MAX_CHARS", str(Settings.llm_max_chars))),
+        domain_time_budget_seconds=int(os.getenv("DOMAIN_TIME_BUDGET_SECONDS", str(Settings.domain_time_budget_seconds))),
     )
